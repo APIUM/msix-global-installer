@@ -1,3 +1,5 @@
+import events
+import msix
 import tkinter
 from tkinter import ttk
 
@@ -26,12 +28,13 @@ class MainApplication(ttk.Frame):
         self._frame.grid(row=0, column=0, sticky="nsew", **frame.pad_parameters)
 
 
-class InfoScreen(ttk.Frame):
+class InfoScreen(ttk.Frame, events.EventHandler):
     pad_parameters = {"padx": 12, "pady": 24}
 
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
+        events.post_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
 
         title = ttk.Label(self, text="Install MSIX Application")
         title.grid(row=0, column=0, sticky="W")
@@ -39,14 +42,14 @@ class InfoScreen(ttk.Frame):
         author = ttk.Label(self, text="Author:")
         author.grid(row=1, column=0, sticky="W")
 
-        author_content = ttk.Label(self, text="XYZ")
-        author_content.grid(row=1, column=1, sticky="W")
+        self.author_content = ttk.Label(self, text="XYZ")
+        self.author_content.grid(row=1, column=1, sticky="W")
 
         version = ttk.Label(self, text="Version:")
         version.grid(row=2, column=0, sticky="W")
 
-        version_content = ttk.Label(self, text="v0.0.0.0")
-        version_content.grid(row=2, column=1, sticky="W")
+        self.version_content = ttk.Label(self, text="v0.0.0.0")
+        self.version_content.grid(row=2, column=1, sticky="W")
 
         install_type_label = ttk.Label(self, text="Install Globally")
         install_type_label.grid(row=3, column=0, sticky="W")
@@ -64,6 +67,13 @@ class InfoScreen(ttk.Frame):
             command=lambda: self.parent.switch_frame(InstallScreen),
         )
         button.grid(row=4, column=2)
+
+    async def handle_event(self, event: events.Event):
+        """Handle events on the queue."""
+        if event.name == events.EventType.MSIX_METADATA_RECEIVED:
+            data: msix.MsixMetadata = event.data
+            self.version_content.configure(text=data.version)
+            self.author_content.configure(text=data.publisher)
 
 
 class InstallScreen(ttk.Frame):
