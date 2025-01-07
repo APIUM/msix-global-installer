@@ -3,11 +3,16 @@ name = "msix-global-installer"
 version = "0.1.0"
 description = "Install MSIX packages globally on Windows."
 readme = "README.md"
+authors = [
+    { name = "Algy Tynan", email = "algy.tynan@planetinnovation.com.au" }
+]
 requires-python = ">=3.10.6"
 dependencies = [
     "attrs>=24.3.0",
+    "pillow>=11.1.0",
     "pyuac>=0.0.3",
     "pywin32>=308",
+    "pywinpty>=2.0.14",
     "sv-ttk>=2.6.0",
     "tk>=0.1.0",
 ]
@@ -17,3 +22,10 @@ dev = [
     "pytest>=8.3.4",
     "ruff>=0.8.5",
 ]
+
+[project.scripts]
+msix-global-installer = "msix_global_installer:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

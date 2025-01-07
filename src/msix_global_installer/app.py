@@ -1,14 +1,11 @@
-import gui
+from msix_global_installer import config, events, gui, msix, pickler
 import asyncio
-import threading
-import events
-import msix
-import pathlib
 import logging
-import config
+import pathlib
+import threading
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +13,8 @@ def process_event(event: events.Event):
     if event.name == events.EventType.REQUEST_MSIX_METADATA:
         base_path = pathlib.Path(__file__).parent.parent.resolve()
         path = base_path / config.MSIX_PACKAGE_PATH
-        meta = msix.get_msix_metadata(path)
+        print(pathlib.Path().absolute())
+        meta = pickler.load_metadata("extracted/data.pkl")
         logger.info("Got metadata %s", meta)
         metadata_event = events.Event(name=events.EventType.MSIX_METADATA_RECEIVED, data=meta)
         events.post_event_sync(event=metadata_event, event_queue=events.gui_event_queue)

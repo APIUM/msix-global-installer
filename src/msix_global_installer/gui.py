@@ -1,11 +1,10 @@
-import asyncio
-import events
-import msix
-import tkinter
 from tkinter import ttk
+from PIL import ImageTk, Image
+from msix_global_installer import events
+from msix_global_installer import msix
 import logging
 import pyuac
-import config
+import tkinter
 
 # Theme
 import sv_ttk
@@ -26,7 +25,7 @@ class MainApplication(ttk.Frame):
 
         self.parent.title("Install MSIX Application")
 
-        self.switch_frame(InfoScreen)
+        self.switch_frame(InfoScreenContainer)
         sv_ttk.set_theme("dark")
 
         # Start the asyncio loop
@@ -48,6 +47,46 @@ class MainApplication(ttk.Frame):
             self._frame.destroy()
         self._frame: ttk.Frame = new_frame
         self._frame.grid(row=0, column=0, sticky="nsew", **frame.pad_parameters)
+
+    
+class InfoScreenContainer(ttk.Frame, events.EventHandler):
+    pad_parameters = {"padx": 12, "pady": 24}
+
+    def __init__(self, parent: tkinter.Tk, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.parent: tkinter.Tk = parent
+
+        self.left_frame = InfoScreenImage(self)
+        self.left_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+
+        self.right_frame = InfoScreen(self)
+        self.right_frame.grid(row=0, column=1, sticky="nsew", padx=12, pady=12)
+    
+    def switch_frame(self, frame):
+        self.parent.switch_frame(frame)
+
+    def handle_event(self, event: events.Event):
+        """Handle events on the queue."""
+        # This will split the event so both get it
+        self.left_frame.handle_event(event)
+        self.right_frame.handle_event(event)
+
+
+class InfoScreenImage(ttk.Frame, events.EventHandler):
+
+    def __init__(self, parent: tkinter.Tk, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+        self.parent: tkinter.Tk = parent
+
+
+    def handle_event(self, event: events.Event):
+        """Handle events on the queue."""
+        if event.name == events.EventType.MSIX_METADATA_RECEIVED:
+            metadata: msix.MsixMetadata = event.data
+            scaled_image = Image.open(metadata.scaled_icon_path)
+            self.img = ImageTk.PhotoImage(scaled_image)
+            panel = ttk.Label(self.parent, image = self.img)
+            panel.grid(row=0, column=0)
 
 
 class InfoScreen(ttk.Frame, events.EventHandler):
@@ -73,7 +112,8 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         self.version_content = ttk.Label(self, text="v0.0.0.0")
         self.version_content.grid(row=2, column=1, sticky="W")
 
-        install_type_label = ttk.Label(self, text="Install Globally")
+        # Not sure what's causing these to get cut off
+        install_type_label = ttk.Label(self, text="Installnstall Globally")
         install_type_label.grid(row=3, column=0, sticky="W")
 
         self.global_install_checkbox_state = tkinter.BooleanVar(self)
@@ -82,14 +122,14 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         global_install_checkbox = ttk.Checkbutton(
             self, variable=self.global_install_checkbox_state, command=self.on_checkbox_change
         )
-        global_install_checkbox.grid(row=3, column=1, sticky="W")
+        global_install_checkbox.grid(row=3, column=0, sticky="W")
 
         button = ttk.Button(
             self,
             text="Install",
             command=self.install,
         )
-        button.grid(row=4, column=2)
+        button.grid(row=4, column=1)
 
     def on_checkbox_change(self):
         """On change to checkbox."""
@@ -97,11 +137,11 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         if self.global_install_checkbox_state.get():
             if not pyuac.isUserAdmin():
                 # First hide the window
-                self.parent.parent.withdraw()
+                self.parent.parent.parent.withdraw()
                 # Then run as admin which blocks until complete
                 pyuac.runAsAdmin()
                 # Then close the first application (which is currently hidden)
-                self.parent.parent.quit()
+                self.parent.parent.parent.quit()
 
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""
@@ -134,7 +174,7 @@ class InstallScreen(ttk.Frame):
         self.progress.start(interval=200)
 
         done_button = ttk.Button(
-            self, text="Done", command=lambda: self.parent.switch_frame(InfoScreen)
+            self, text="Done", command=lambda: self.parent.switch_frame(InfoScreenContainer)
         )
         done_button.grid(row=2, column=0)
     
@@ -147,7 +187,8 @@ class InstallScreen(ttk.Frame):
                 logger.info("Updating progress bar to: %s", progress_percentage)
                 self.progress.stop()
                 self.progress.step(progress_percentage)
-            except IndexError:
+            except KeyError:
+                # Progress wasn't included in the data
                 pass
 
 async def main():

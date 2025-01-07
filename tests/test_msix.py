@@ -1,3 +1,4 @@
+import math
 import pytest
 import pathlib
 from src import msix
@@ -18,3 +19,13 @@ class TestMsix:
         path = pathlib.Path("tests/TestMsixPackage.msix")
         msix.install_msix(path)
 
+    def test_count_percentage(self):
+        """Test we can count the progress."""
+        test_start = r"    [                                                                    ]      \r\n"
+        test_progress1 = r'    [oooo                                                                ]      \r\n'
+        test_progress2 = r'    [ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo   ]      \r\n'
+        test_complete = r'    [oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo]      \r\n'
+        assert msix.count_progress(test_start, 68) == 0.0
+        assert msix.count_progress(test_progress1, 68) == math.ceil(4/68*100)
+        assert msix.count_progress(test_progress2, 68) == 96
+        assert msix.count_progress(test_complete, 68) == 100.0
