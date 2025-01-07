@@ -4,6 +4,7 @@ import msix
 import tkinter
 from tkinter import ttk
 import logging
+import pyuac
 import config
 
 # Theme
@@ -76,9 +77,10 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         install_type_label.grid(row=3, column=0, sticky="W")
 
         self.global_install_checkbox_state = tkinter.BooleanVar(self)
-        self.global_install_checkbox_state.set(False)
+        is_admin = pyuac.isUserAdmin()
+        self.global_install_checkbox_state.set(is_admin)
         global_install_checkbox = ttk.Checkbutton(
-            self, variable=self.global_install_checkbox_state
+            self, variable=self.global_install_checkbox_state, command=self.on_checkbox_change
         )
         global_install_checkbox.grid(row=3, column=1, sticky="W")
 
@@ -88,6 +90,13 @@ class InfoScreen(ttk.Frame, events.EventHandler):
             command=self.install,
         )
         button.grid(row=4, column=2)
+
+    def on_checkbox_change(self):
+        """On change to checkbox."""
+        # Run as admin if not and it's asked for.
+        if self.global_install_checkbox_state.get():
+            if not pyuac.isUserAdmin():
+                pyuac.runAsAdmin()
 
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""

@@ -67,8 +67,8 @@ def get_name_from_publisher(publisher: str) -> str:
 def install_msix(path: pathlib.Path, global_install: bool = False):
     """Install an MSIX package."""
     # TODO: If global install ensure we are running as admin
-    global_install_command = "Add-AppxProvisionedPackage -PackagePath .\%s -Online -SkipLicense" % path
-    local_install_command = "Add-AppxPackage -Path .\%s" % path
+    global_install_command = "Add-AppxProvisionedPackage -PackagePath %s -Online -SkipLicense" % path
+    local_install_command = "Add-AppxPackage -Path %s" % path
     command_string = local_install_command if not global_install else global_install_command
     p = subprocess.Popen(
         [
