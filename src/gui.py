@@ -52,8 +52,8 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         self.parent: tkinter.Tk = parent
         self.post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
 
-        title = ttk.Label(self, text="Install MSIX Application")
-        title.grid(row=0, column=0, sticky="W")
+        self.title = ttk.Label(self, text="Install MSIX Application")
+        self.title.grid(row=0, column=0, sticky="W")
 
         author = ttk.Label(self, text="Author:")
         author.grid(row=1, column=0, sticky="W")
@@ -88,6 +88,8 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         """Handle events on the queue."""
         if event.name == events.EventType.MSIX_METADATA_RECEIVED:
             data: msix.MsixMetadata = event.data
+            title_text = f"Install {data.package_name}"
+            self.title.configure(text=title_text)
             self.version_content.configure(text=data.version)
             self.author_content.configure(text=data.publisher)
     
