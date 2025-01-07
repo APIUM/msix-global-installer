@@ -11,9 +11,8 @@ dependencies = [
     "attrs>=24.3.0",
     "pillow>=11.1.0",
     "pyuac>=0.0.3",
-    "pywin32>=308",
     "pywin32>=308 ; sys_platform == 'win32'",
-    "pywinpty>=2.0.14",
+    "pywinpty>=2.0.14 ; sys_platform == 'win32'",
     "sv-ttk>=2.6.0",
     "tk>=0.1.0",
 ]

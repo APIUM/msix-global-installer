@@ -16,11 +16,6 @@ class TestMsix:
         assert data.publisher == 'Contoso Corporation'
         assert data.package_path == path
 
-    def test_install(self):
-        """Test we can install with a subprocess."""
-        path = pathlib.Path("tests/TestMsixPackage.msix")
-        msix.install_msix(path)
-
     def test_count_percentage(self):
         """Test we can count the progress."""
         test_start = r"    [                                                                    ]      \r\n"

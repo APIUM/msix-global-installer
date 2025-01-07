@@ -1,13 +1,16 @@
 from dataclasses import dataclass
 from math import ceil
 from msix_global_installer import events
-from winpty import PtyProcess
 import logging
 import os
 import pathlib
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+import sys
+
+if sys.platform == "win32":
+    from winpty import PtyProcess
 
 
 logger = logging.getLogger(__name__)

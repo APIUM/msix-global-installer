@@ -79,8 +79,8 @@ dependencies = [
     { name = "attrs" },
     { name = "pillow" },
     { name = "pyuac" },
-    { name = "pywin32" },
-    { name = "pywinpty" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "sv-ttk" },
     { name = "tk" },
 ]
@@ -97,9 +97,8 @@ requires-dist = [
     { name = "attrs", specifier = ">=24.3.0" },
     { name = "pillow", specifier = ">=11.1.0" },
     { name = "pyuac", specifier = ">=0.0.3" },
-    { name = "pywin32", specifier = ">=308" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=308" },
-    { name = "pywinpty", specifier = ">=2.0.14" },
+    { name = "pywinpty", marker = "sys_platform == 'win32'", specifier = ">=2.0.14" },
     { name = "sv-ttk", specifier = ">=2.6.0" },
     { name = "tk", specifier = ">=0.1.0" },
 ]
