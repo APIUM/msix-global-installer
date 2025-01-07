@@ -1,10 +1,15 @@
+import asyncio
 import events
 import msix
 import tkinter
 from tkinter import ttk
+import logging
 
 # Theme
 import sv_ttk
+
+
+logger = logging.getLogger(__name__)
 
 
 class MainApplication(ttk.Frame):
@@ -18,11 +23,22 @@ class MainApplication(ttk.Frame):
         self.switch_frame(InfoScreen)
         sv_ttk.set_theme("dark")
 
+        # Start the asyncio loop
+        self.parent.after(100, self.check_queue)
+
+    def check_queue(self):
+        """Check the event queue."""
+        event = events.receive_event_sync(events.gui_event_queue)
+        if event != None:
+            logger.info("Handling gui event: %s", event)
+            self._frame.handle_event(event)
+        self.parent.after(100, self.check_queue)
+
     def switch_frame(self, frame: ttk.Frame):
-        print("Switching to frame %s", frame)
+        logger.info("Switching to frame %s", frame)
         new_frame = frame(self)
         if self._frame is not None:
-            print("Destroying frame %s", self._frame)
+            logger.info("Destroying frame %s", self._frame)
             self._frame.destroy()
         self._frame: ttk.Frame = new_frame
         self._frame.grid(row=0, column=0, sticky="nsew", **frame.pad_parameters)
@@ -34,7 +50,7 @@ class InfoScreen(ttk.Frame, events.EventHandler):
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
-        events.post_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
+        self.post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
 
         title = ttk.Label(self, text="Install MSIX Application")
         title.grid(row=0, column=0, sticky="W")
@@ -68,12 +84,15 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         )
         button.grid(row=4, column=2)
 
-    async def handle_event(self, event: events.Event):
+    def handle_event(self, event: events.Event):
         """Handle events on the queue."""
         if event.name == events.EventType.MSIX_METADATA_RECEIVED:
             data: msix.MsixMetadata = event.data
             self.version_content.configure(text=data.version)
             self.author_content.configure(text=data.publisher)
+    
+    def post_backend_event(self, event: events.Event):
+        events.post_event_sync(event, events.backend_event_queue)
 
 
 class InstallScreen(ttk.Frame):
@@ -91,9 +110,12 @@ class InstallScreen(ttk.Frame):
             self, text="Done", command=lambda: self.parent.switch_frame(InfoScreen)
         )
         done_button.grid(row=1, column=0)
+    
+    def handle_event(self):
+        pass
 
 
-def main():
+async def main():
     root = tkinter.Tk()
     MainApplication(root).grid()
     root.geometry("300x150")

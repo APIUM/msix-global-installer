@@ -39,7 +39,8 @@ class EventData(asyncio.Event):
         return self.data
 
 
-event_queue = asyncio.Queue()  # type: asyncio.Queue[Event]
+gui_event_queue = asyncio.Queue()  # type: asyncio.Queue[Event]
+backend_event_queue = asyncio.Queue()  # type: asyncio.Queue[Event]
 
 
 class EventHandler(abc.ABC):
@@ -54,13 +55,20 @@ class EventHandler(abc.ABC):
         pass
 
 
-async def post_event(event: Event) -> None:
+async def post_event(event: Event, event_queue: asyncio.Queue) -> None:
     """Post an event to the queue."""
     logger.debug("Posting event: %s", str(event))
     await event_queue.put(event)
 
 
-async def wait_for_queue(timeout_s: int) -> None:
+def post_event_sync(event: Event, event_queue: asyncio.Queue) -> None:
+    """Post an event without waiting."""
+    logger.info("Received non async event %s", str(event))
+    event_queue.put_nowait(event)
+
+
+
+async def wait_for_queue(timeout_s: int, event_queue: asyncio.Queue) -> None:
     """Wait for the event queue to be empty."""
     initial_time = time.monotonic_ns()
     timeout_ns = timeout_s * int(1e9)
@@ -73,9 +81,19 @@ async def wait_for_queue(timeout_s: int) -> None:
             break
 
 
-async def receive_event() -> Event:
+async def receive_event(event_queue: asyncio.Queue) -> Event:
     """Receive an event from the event queue.
 
     This function will wait indefinitely on an empty queue until an event is available.
     """
+    logger.info("Receiving events...")
     return await event_queue.get()
+
+def receive_event_sync(event_queue: asyncio.Queue) -> Event | None:
+    try:
+        # Non-blocking queue check
+        event = event_queue.get_nowait()
+        return event
+    except asyncio.QueueEmpty:
+        # No events in the queue, continue
+        return None
