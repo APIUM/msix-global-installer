@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class EventType(str, enum.Enum):
     MSIX_METADATA_RECEIVED = "msix-metadata-received"
     REQUEST_MSIX_METADATA = "request-msix-metadata"
+    INSTALL_MSIX = "install-msix"
 
 
 @attr.s(frozen=True)

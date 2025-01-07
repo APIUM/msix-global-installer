@@ -4,12 +4,17 @@ import msix
 import tkinter
 from tkinter import ttk
 import logging
+import config
 
 # Theme
 import sv_ttk
 
 
 logger = logging.getLogger(__name__)
+
+
+def post_backend_event(event: events.Event):
+    events.post_event_sync(event, events.backend_event_queue)
 
 
 class MainApplication(ttk.Frame):
@@ -50,7 +55,7 @@ class InfoScreen(ttk.Frame, events.EventHandler):
     def __init__(self, parent, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
-        self.post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
+        post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
 
         self.title = ttk.Label(self, text="Install MSIX Application")
         self.title.grid(row=0, column=0, sticky="W")
@@ -80,7 +85,7 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         button = ttk.Button(
             self,
             text="Install",
-            command=lambda: self.parent.switch_frame(InstallScreen),
+            command=self.install,
         )
         button.grid(row=4, column=2)
 
@@ -92,9 +97,12 @@ class InfoScreen(ttk.Frame, events.EventHandler):
             self.title.configure(text=title_text)
             self.version_content.configure(text=data.version)
             self.author_content.configure(text=data.publisher)
-    
-    def post_backend_event(self, event: events.Event):
-        events.post_event_sync(event, events.backend_event_queue)
+
+    def install(self):
+        """Install the MSIX."""
+        self.parent.switch_frame(InstallScreen)
+        event_data = {"global": self.global_install_checkbox_state.get()}
+        post_backend_event(events.Event(events.EventType.INSTALL_MSIX, data=event_data))
 
 
 class InstallScreen(ttk.Frame):
@@ -120,7 +128,6 @@ class InstallScreen(ttk.Frame):
 async def main():
     root = tkinter.Tk()
     MainApplication(root).grid()
-    root.geometry("300x150")
     root.mainloop()
 
 

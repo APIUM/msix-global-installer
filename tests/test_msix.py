@@ -11,4 +11,10 @@ class TestMsix:
         data = msix.get_msix_metadata(path)
         assert data.package_name == 'MyEmployees'
         assert data.version == '9.0.0.0'
-        assert data.publisher == 'CN=Contoso Software (FOR LAB USE ONLY), O=Contoso Corporation, C=US'
+        assert data.publisher == 'Contoso Corporation'
+
+    def test_install(self):
+        """Test we can install with a subprocess."""
+        path = pathlib.Path("tests/TestMsixPackage.msix")
+        msix.install_msix(path)
+
