@@ -1,7 +1,6 @@
 from tkinter import ttk
 from PIL import ImageTk, Image
-from msix_global_installer import events
-from msix_global_installer import msix
+from msix_global_installer import config, events, msix, pyinstaller_helper, pickler
 import logging
 import pyuac
 import tkinter
@@ -27,9 +26,17 @@ class MainApplication(ttk.Frame):
 
         self.switch_frame(InfoScreenContainer)
         sv_ttk.set_theme("dark")
+        self.set_icon()
 
         # Start the asyncio loop
         self.parent.after(100, self.check_queue)
+    
+    def set_icon(self):
+        """Set the window icon."""
+        meta = pickler.load_metadata(config.EXTRACTED_DATA_PATH)
+        image_to_iconify = Image.open(pyinstaller_helper.resource_path(meta.icon_path))
+        icon_in_correct_format = ImageTk.PhotoImage(image_to_iconify)
+        self.parent.wm_iconphoto(False, icon_in_correct_format)
 
     def check_queue(self):
         """Check the event queue."""
@@ -83,7 +90,8 @@ class InfoScreenImage(ttk.Frame, events.EventHandler):
         """Handle events on the queue."""
         if event.name == events.EventType.MSIX_METADATA_RECEIVED:
             metadata: msix.MsixMetadata = event.data
-            scaled_image = Image.open(metadata.scaled_icon_path)
+            image_path = pyinstaller_helper.resource_path(metadata.scaled_icon_path)
+            scaled_image = Image.open(image_path)
             self.img = ImageTk.PhotoImage(scaled_image)
             panel = ttk.Label(self.parent, image = self.img)
             panel.grid(row=0, column=0)

@@ -1,4 +1,4 @@
 import pathlib
+from msix_global_installer import pyinstaller_helper
 
-MSIX_PACKAGE_PATH: pathlib.Path = pathlib.Path("huron-app-v0.4.6-44-g30854aa-installer.msix")
-# MSIX_PACKAGE_PATH: pathlib.Path = pathlib.Path("tests/TestMsixPackage.msix")
+EXTRACTED_DATA_PATH: pathlib.Path = pyinstaller_helper.resource_path("extracted/data.pkl")

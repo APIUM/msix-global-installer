@@ -1,18 +1,20 @@
 import math
 import pytest
 import pathlib
-from src import msix
+from msix_global_installer import msix
 
 class TestMsix:
     """Class to test MSIX functions."""
 
-    def test_get_msix_metadata(self):
+    def test_get_msix_metadata(self, tmpdir):
         """Test we get the required metadata from a given test file."""
         path = pathlib.Path("tests/TestMsixPackage.msix")
-        data = msix.get_msix_metadata(path)
+        dir = tmpdir
+        data = msix.get_msix_metadata(path, output_path=dir)
         assert data.package_name == 'MyEmployees'
         assert data.version == '9.0.0.0'
         assert data.publisher == 'Contoso Corporation'
+        assert data.package_path == path
 
     def test_install(self):
         """Test we can install with a subprocess."""
