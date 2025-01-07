@@ -53,7 +53,7 @@ class MainApplication(ttk.Frame):
 class InfoScreen(ttk.Frame, events.EventHandler):
     pad_parameters = {"padx": 12, "pady": 24}
 
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent: tkinter.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
         post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
@@ -96,7 +96,12 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         # Run as admin if not and it's asked for.
         if self.global_install_checkbox_state.get():
             if not pyuac.isUserAdmin():
+                # First hide the window
+                self.parent.parent.withdraw()
+                # Then run as admin which blocks until complete
                 pyuac.runAsAdmin()
+                # Then close the first application (which is currently hidden)
+                self.parent.parent.quit()
 
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""
@@ -121,18 +126,29 @@ class InstallScreen(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
 
-        progress = ttk.Progressbar(self, length=200)
-        progress.grid(row=0, column=0)
-        progress.step(10)
+        self.status = ttk.Label(self, text="Starting...")
+        self.status.grid(row=0, column=0)
+
+        self.progress = ttk.Progressbar(self, length=200, mode='indeterminate')
+        self.progress.grid(row=1, column=0)
+        self.progress.start(interval=200)
 
         done_button = ttk.Button(
             self, text="Done", command=lambda: self.parent.switch_frame(InfoScreen)
         )
-        done_button.grid(row=1, column=0)
+        done_button.grid(row=2, column=0)
     
-    def handle_event(self):
-        pass
-
+    def handle_event(self, event):
+        if event.name == events.EventType.INSTALL_PROGRESS_TEXT:
+            text = event.data["text"]
+            self.status.configure(text=text)
+            try:
+                progress_percentage = int(event.data["progress"])
+                logger.info("Updating progress bar to: %s", progress_percentage)
+                self.progress.stop()
+                self.progress.step(progress_percentage)
+            except IndexError:
+                pass
 
 async def main():
     root = tkinter.Tk()

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 import pathlib
+import events
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
@@ -74,18 +75,39 @@ def install_msix(path: pathlib.Path, global_install: bool = False):
         [
             "powershell.exe",
             "-Command",
-            command_string
+            command_string,
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        encoding="utf-8",
         text=True
     )
-    stdout, stderr = p.communicate()
+    # stdout, stderr = p.communicate()
+    error_lines = ""
+    while p.poll() is None:
+        # Add errors
+        errline = p.stderr.readline()
+        error_lines += errline
+        logger.info("Err line is %s", errline)
+        # Parse output
+        for line in p.stdout:
+            line = line.strip()
+            logger.info("Line is %s", line)
+            event = events.Event(name=events.EventType.INSTALL_PROGRESS_TEXT, data={"text": line})
+            events.post_event_sync(event, event_queue=events.gui_event_queue)
+
     if p.returncode != 0:
-        parse_error(stderr)
+        logger.error("Returned error!")
+        try:
+            parse_error(error_lines)
+        except RuntimeError as e:
+            logger.exception("Error installing")
+            event = events.Event(name=events.EventType.INSTALL_PROGRESS_TEXT, data={"text": e.args[0], "progress": 100})
+            events.post_event_sync(event, event_queue=events.gui_event_queue)
+            pass
     else:
         logger.info("Should have installed successfully!")
-        logger.info(stdout)
+        # logger.info(stdout)
 
 
 def parse_error(error_string: str):
