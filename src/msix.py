@@ -104,10 +104,11 @@ def install_msix(path: pathlib.Path, global_install: bool = False):
             logger.exception("Error installing")
             event = events.Event(name=events.EventType.INSTALL_PROGRESS_TEXT, data={"text": e.args[0], "progress": 100})
             events.post_event_sync(event, event_queue=events.gui_event_queue)
-            pass
     else:
         logger.info("Should have installed successfully!")
-        # logger.info(stdout)
+        install_complete_text = "Install Complete"
+        event = events.Event(name=events.EventType.INSTALL_PROGRESS_TEXT, data={"text": install_complete_text, "progress": 100})
+        events.post_event_sync(event, event_queue=events.gui_event_queue)
 
 
 def parse_error(error_string: str):
