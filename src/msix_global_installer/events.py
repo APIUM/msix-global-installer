@@ -4,7 +4,6 @@ import asyncio
 import enum
 import time
 import logging
-from dataclasses import dataclass
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -69,7 +68,6 @@ def post_event_sync(event: Event, event_queue: asyncio.Queue) -> None:
     event_queue.put_nowait(event)
 
 
-
 async def wait_for_queue(timeout_s: int, event_queue: asyncio.Queue) -> None:
     """Wait for the event queue to be empty."""
     initial_time = time.monotonic_ns()
@@ -78,7 +76,9 @@ async def wait_for_queue(timeout_s: int, event_queue: asyncio.Queue) -> None:
         current_time = time.monotonic_ns()
         await asyncio.sleep(0)
         if current_time - initial_time > timeout_ns:
-            raise TimeoutError(f"Timed out waiting for event queue to clear. Events: {str(event_queue)}")
+            raise TimeoutError(
+                f"Timed out waiting for event queue to clear. Events: {str(event_queue)}"
+            )
         elif event_queue.empty():
             break
 
@@ -90,6 +90,7 @@ async def receive_event(event_queue: asyncio.Queue) -> Event:
     """
     logger.info("Receiving events...")
     return await event_queue.get()
+
 
 def receive_event_sync(event_queue: asyncio.Queue) -> Event | None:
     try:

@@ -1,7 +1,7 @@
 # Helper script to create data for the application
 #
 # This avoids runtime extraction/processing of data
-# 
+#
 # Usage: python extract_msix_data.py path_to_msix.msix
 #
 
@@ -21,7 +21,9 @@ metadata = msix.get_msix_metadata(path, data_output_path)
 
 # Scale the image, save and add to metadata
 scaled_image = image.scale_image(metadata.icon_path, 100, 100)
-scaled_image_path = pathlib.Path(metadata.icon_path.parent) / pathlib.Path(metadata.icon_path.stem + "_scaled" + metadata.icon_path.suffix)
+scaled_image_path = pathlib.Path(metadata.icon_path.parent) / pathlib.Path(
+    metadata.icon_path.stem + "_scaled" + metadata.icon_path.suffix
+)
 image.save_image(scaled_image, scaled_image_path)
 metadata.scaled_icon_path = scaled_image_path
 

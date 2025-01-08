@@ -30,7 +30,7 @@ class MainApplication(ttk.Frame):
 
         # Start the asyncio loop
         self.parent.after(100, self.check_queue)
-    
+
     def set_icon(self):
         """Set the window icon."""
         meta = pickler.load_metadata(config.EXTRACTED_DATA_PATH)
@@ -41,7 +41,7 @@ class MainApplication(ttk.Frame):
     def check_queue(self):
         """Check the event queue."""
         event = events.receive_event_sync(events.gui_event_queue)
-        if event != None:
+        if event is not None:
             logger.info("Handling gui event: %s", event)
             self._frame.handle_event(event)
         self.parent.after(100, self.check_queue)
@@ -55,7 +55,7 @@ class MainApplication(ttk.Frame):
         self._frame: ttk.Frame = new_frame
         self._frame.grid(row=0, column=0, sticky="nsew", **frame.pad_parameters)
 
-    
+
 class InfoScreenContainer(ttk.Frame, events.EventHandler):
     pad_parameters = {"padx": 12, "pady": 24}
 
@@ -68,7 +68,7 @@ class InfoScreenContainer(ttk.Frame, events.EventHandler):
 
         self.right_frame = InfoScreen(self)
         self.right_frame.grid(row=0, column=1, sticky="nsew", padx=12, pady=12)
-    
+
     def switch_frame(self, frame):
         self.parent.switch_frame(frame)
 
@@ -80,11 +80,9 @@ class InfoScreenContainer(ttk.Frame, events.EventHandler):
 
 
 class InfoScreenImage(ttk.Frame, events.EventHandler):
-
     def __init__(self, parent: tkinter.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
-
 
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""
@@ -93,7 +91,7 @@ class InfoScreenImage(ttk.Frame, events.EventHandler):
             image_path = pyinstaller_helper.resource_path(metadata.scaled_icon_path)
             scaled_image = Image.open(image_path)
             self.img = ImageTk.PhotoImage(scaled_image)
-            panel = ttk.Label(self.parent, image = self.img)
+            panel = ttk.Label(self.parent, image=self.img)
             panel.grid(row=0, column=0)
 
 
@@ -103,7 +101,11 @@ class InfoScreen(ttk.Frame, events.EventHandler):
     def __init__(self, parent: tkinter.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
-        post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
+        post_backend_event(
+            events.Event(
+                events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()
+            )
+        )
 
         self.title = ttk.Label(self, text="Install MSIX Application")
         self.title.grid(row=0, column=0, sticky="W")
@@ -128,7 +130,9 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         is_admin = pyuac.isUserAdmin()
         self.global_install_checkbox_state.set(is_admin)
         global_install_checkbox = ttk.Checkbutton(
-            self, variable=self.global_install_checkbox_state, command=self.on_checkbox_change
+            self,
+            variable=self.global_install_checkbox_state,
+            command=self.on_checkbox_change,
         )
         global_install_checkbox.grid(row=3, column=0, sticky="W")
 
@@ -177,15 +181,17 @@ class InstallScreen(ttk.Frame):
         self.status = ttk.Label(self, text="Starting...")
         self.status.grid(row=0, column=0)
 
-        self.progress = ttk.Progressbar(self, length=200, mode='indeterminate')
+        self.progress = ttk.Progressbar(self, length=200, mode="indeterminate")
         self.progress.grid(row=1, column=0)
         self.progress.start(interval=200)
 
         done_button = ttk.Button(
-            self, text="Done", command=lambda: self.parent.switch_frame(InfoScreenContainer)
+            self,
+            text="Done",
+            command=lambda: self.parent.switch_frame(InfoScreenContainer),
         )
         done_button.grid(row=2, column=0)
-    
+
     def handle_event(self, event):
         if event.name == events.EventType.INSTALL_PROGRESS_TEXT:
             text = event.data["text"]
@@ -198,6 +204,7 @@ class InstallScreen(ttk.Frame):
             except KeyError:
                 # Progress wasn't included in the data
                 pass
+
 
 async def main():
     root = tkinter.Tk()
