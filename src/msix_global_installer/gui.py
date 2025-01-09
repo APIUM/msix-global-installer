@@ -33,7 +33,7 @@ class MainApplication(ttk.Frame):
 
     def set_icon(self):
         """Set the window icon."""
-        meta = pickler.load_metadata(config.EXTRACTED_DATA_PATH)
+        meta = pickler.load_metadata(config.EXTRACTED_DATA_PATH)[0]
         image_to_iconify = Image.open(pyinstaller_helper.resource_path(meta.icon_path))
         icon_in_correct_format = ImageTk.PhotoImage(image_to_iconify)
         self.parent.wm_iconphoto(False, icon_in_correct_format)
@@ -87,7 +87,8 @@ class InfoScreenImage(ttk.Frame, events.EventHandler):
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""
         if event.name == events.EventType.MSIX_METADATA_RECEIVED:
-            metadata: msix.MsixMetadata = event.data
+            # Only need the image from the first metadata entry
+            metadata: msix.MsixMetadata = event.data[0]
             image_path = pyinstaller_helper.resource_path(metadata.scaled_icon_path)
             scaled_image = Image.open(image_path)
             self.img = ImageTk.PhotoImage(scaled_image)
@@ -122,9 +123,14 @@ class InfoScreen(ttk.Frame, events.EventHandler):
         self.version_content = ttk.Label(self, text="v0.0.0.0")
         self.version_content.grid(row=2, column=1, sticky="W")
 
-        # Not sure what's causing these to get cut off
-        install_type_label = ttk.Label(self, text="Installnstall Globally")
-        install_type_label.grid(row=3, column=0, sticky="W")
+        dependency_count_title = ttk.Label(self, text="Dependencies:")
+        dependency_count_title.grid(row=3, column=0, sticky="W")
+
+        self.dependency_count = ttk.Label(self, text="0")
+        self.dependency_count.grid(row=3, column=1, sticky="W")
+
+        install_type_label = ttk.Label(self, text="Install for all users")
+        install_type_label.grid(row=4, column=0, sticky="W")
 
         self.global_install_checkbox_state = tkinter.BooleanVar(self)
         is_admin = pyuac.isUserAdmin()
@@ -134,14 +140,14 @@ class InfoScreen(ttk.Frame, events.EventHandler):
             variable=self.global_install_checkbox_state,
             command=self.on_checkbox_change,
         )
-        global_install_checkbox.grid(row=3, column=0, sticky="W")
+        global_install_checkbox.grid(row=4, column=1, sticky="W")
 
         button = ttk.Button(
             self,
             text="Install",
             command=self.install,
         )
-        button.grid(row=4, column=1)
+        button.grid(row=5, column=1)
 
     def on_checkbox_change(self):
         """On change to checkbox."""
@@ -158,11 +164,14 @@ class InfoScreen(ttk.Frame, events.EventHandler):
     def handle_event(self, event: events.Event):
         """Handle events on the queue."""
         if event.name == events.EventType.MSIX_METADATA_RECEIVED:
-            data: msix.MsixMetadata = event.data
+            all_data: list[msix.MsixMetadata] = event.data
+            data = all_data[0]
             title_text = f"Install {data.package_name}"
             self.title.configure(text=title_text)
             self.version_content.configure(text=data.version)
             self.author_content.configure(text=data.publisher)
+            dep_count = len(all_data) - 1
+            self.dependency_count.configure(text=dep_count)
 
     def install(self):
         """Install the MSIX."""
@@ -178,24 +187,37 @@ class InstallScreen(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
 
-        self.status = ttk.Label(self, text="Starting...")
-        self.status.grid(row=0, column=0)
+        self.title = ttk.Label(self, text="Starting...")
+        self.title.grid(row=0, column=0)
+
+        self.subtitle = ttk.Label(self, text="")
+        self.subtitle.grid(row=1, column=0)
 
         self.progress = ttk.Progressbar(self, length=200, mode="indeterminate")
-        self.progress.grid(row=1, column=0)
-        self.progress.start(interval=200)
+        self.progress.grid(row=2, column=0)
+        self.progress.start(interval=2000)
 
         done_button = ttk.Button(
             self,
             text="Done",
             command=lambda: self.parent.switch_frame(InfoScreenContainer),
         )
-        done_button.grid(row=2, column=0)
+        done_button.grid(row=3, column=0)
 
-    def handle_event(self, event):
+    def handle_event(self, event: events.Event):
         if event.name == events.EventType.INSTALL_PROGRESS_TEXT:
-            text = event.data["text"]
-            self.status.configure(text=text)
+            try:
+                text = event.data["title"]
+                self.title.configure(text=text)
+            except KeyError:
+                # Main text wasn't included in the data
+                pass
+            try:
+                text = event.data["subtitle"]
+                self.subtitle.configure(text=text)
+            except KeyError:
+                # Sub text wasn't included in the data
+                pass
             try:
                 progress_percentage = int(event.data["progress"])
                 logger.info("Updating progress bar to: %s", progress_percentage)

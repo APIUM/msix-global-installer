@@ -30,3 +30,16 @@ uv run powershell ./build_exe.ps1
 ```
 
 Your executable will be in dist/.
+
+### How to add dependencies
+
+Copy your MSIX file and dependencies into root of this repo, then run the preparation step
+
+```ps
+uv run python extract_msix_data.py path_to_your_msix_file path_to_dependency path_to_second_dependency ...
+```
+
+The packages will be installed in reverse order with the last one specified installed first, until the
+main package (first argument) is installed last.
+
+There is no tested limit on the number of dependencies.

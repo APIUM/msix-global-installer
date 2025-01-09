@@ -10,7 +10,7 @@ class TestMsix:
         """Test we get the required metadata from a given test file."""
         path = pathlib.Path("tests/TestMsixPackage.msix")
         dir = tmpdir
-        data = msix.get_msix_metadata(path, output_path=dir)
+        data = msix.get_msix_metadata(path, output_icon_path=dir)
         assert data.package_name == "MyEmployees"
         assert data.version == "9.0.0.0"
         assert data.publisher == "Contoso Corporation"

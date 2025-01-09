@@ -19,9 +19,27 @@ def process_event(event: events.Event):
     elif event.name == events.EventType.INSTALL_MSIX:
         install_globally = event.data["global"]
         meta = pickler.load_metadata(config.EXTRACTED_DATA_PATH)
-        path = pyinstaller_helper.resource_path(meta.package_path)
-        logger.info("Installing app: %s", path)
-        meta = msix.install_msix(path=path, global_install=install_globally)
+        paths = [
+            (
+                metadata.package_name,
+                pyinstaller_helper.resource_path(metadata.package_path),
+            )
+            for metadata in meta
+        ]
+        # TODO: Break this into a function in MSIX
+        paths.reverse()
+        number_of_packages = len(paths)
+        for i, path in enumerate(paths):
+            logger.info("Installing app: %s", path)
+            success = msix.install_msix(
+                path=path[1],
+                title=path[0],
+                global_install=install_globally,
+                packages_to_install=number_of_packages,
+                package_number=i + 1,
+            )
+            if not success:
+                break
         logger.info("Installing app: %s... DONE", path)
 
 
