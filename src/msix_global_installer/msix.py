@@ -41,13 +41,17 @@ class ReturnCodeResult:
     return_code: int
 
 
-def get_msix_metadata(msix_path: str, output_path: pathlib.Path) -> MsixMetadata:
+def get_msix_metadata(
+    msix_path: str, output_icon_path: pathlib.Path | None = None
+) -> MsixMetadata:
     """
     Extract Metadata from MSIX package.
 
+    Output path is used for the icon.
+
     Note this does not support APPXBUNDLE.
     """
-    if not output_path.exists():
+    if output_icon_path and not output_icon_path.exists():
         raise Exception("Path doesn't exist")
 
     try:
@@ -94,16 +98,18 @@ def get_msix_metadata(msix_path: str, output_path: pathlib.Path) -> MsixMetadata
                 )
 
                 extracted_icon_path = None
-                if icon_path_in_msix:
-                    # Extract the icon from the MSIX package
-                    icon_path_in_msix = icon_path_in_msix.replace("\\", "/")
-                    output_icon_path = (
-                        pathlib.Path(output_path) / pathlib.Path(icon_path_in_msix).name
-                    )
-                    with msix.open(icon_path_in_msix) as icon_file:
-                        with open(output_icon_path, "wb") as out_file:
-                            out_file.write(icon_file.read())
-                    extracted_icon_path = pathlib.Path(output_icon_path)
+                if output_icon_path is not None:
+                    if icon_path_in_msix:
+                        # Extract the icon from the MSIX package
+                        icon_path_in_msix = icon_path_in_msix.replace("\\", "/")
+                        output_icon_path = (
+                            pathlib.Path(output_icon_path)
+                            / pathlib.Path(icon_path_in_msix).name
+                        )
+                        with msix.open(icon_path_in_msix) as icon_file:
+                            with open(output_icon_path, "wb") as out_file:
+                                out_file.write(icon_file.read())
+                        extracted_icon_path = pathlib.Path(output_icon_path)
 
                 return MsixMetadata(
                     msix_path, package_name, version, publisher, extracted_icon_path
@@ -142,10 +148,17 @@ def count_progress(line: str, max_count: int) -> int | None:
         percentage = count / max_count * 100
     except ZeroDivisionError:
         return 0
+
     return ceil(percentage)
 
 
-def install_msix(path: pathlib.Path, global_install: bool = False):
+def install_msix(
+    path: pathlib.Path,
+    title: str,
+    global_install: bool = False,
+    packages_to_install: int = 1,
+    package_number: int = 1,
+):
     """Install an MSIX package."""
     # TODO: If global install ensure we are running as admin
     global_install_command = (
@@ -176,52 +189,109 @@ def install_msix(path: pathlib.Path, global_install: bool = False):
         + os.linesep
     )
 
-    error = None
-    retcode = None
+    error: str | None = None
+    retcode: int | None = None
     while proc.isalive():
         line = proc.readline()
         logger.debug("%r\n\r", line)
         result = process_line(line)
-        if isinstance(result, ProgressResult):
-            event = events.Event(
-                name=events.EventType.INSTALL_PROGRESS_TEXT,
-                data={"text": "Installing", "progress": result.progress},
-            )
-            events.post_event_sync(event, event_queue=events.gui_event_queue)
-        elif isinstance(result, ErrorResult):
-            error = result.error
-            event = events.Event(
-                name=events.EventType.INSTALL_PROGRESS_TEXT,
-                data={"text": result.error.args[0], "progress": 100},
-            )
-            events.post_event_sync(event, event_queue=events.gui_event_queue)
-        elif isinstance(result, ReturnCodeResult):
-            retcode = result.return_code
-            if retcode > 1 and error is None:
-                event = events.Event(
-                    name=events.EventType.INSTALL_PROGRESS_TEXT,
-                    data={"text": "Error Occurred", "progress": 100},
-                )
-                events.post_event_sync(event, event_queue=events.gui_event_queue)
+        # Return code will also come with a False for should continue so it doesn't
+        # matter that we are overwriting this
+        should_continue, retcode = process_result(result=result, package_title=title, current_error=error, packages_to_install=packages_to_install, package_number=package_number)
+        if isinstance(result, ErrorResult):
+            error = result.error if not error else error
+        if not should_continue:
             break
 
     logger.debug("Process is closed")
 
-    if retcode == 0 and not error:
+    # Set progress to 100
+    progress = progress_mincer(100, packages_to_install, package_number)
+    logger.error("Progress: " + str(progress))
+    event = events.Event(
+        name=events.EventType.INSTALL_PROGRESS_TEXT,
+        data={"progress": progress},
+    )
+    events.post_event_sync(event, event_queue=events.gui_event_queue)
+
+    return check_has_succeeded(return_code=retcode, error=error, package_title=title)
+
+
+def check_has_succeeded(return_code: int, error: str, package_title: str):
+    """
+    Return success.
+    
+    Post update to GUI on result.
+    """
+    if return_code == 0 and not error:
         logger.info("Should have installed successfully!")
-        install_complete_text = "Install Complete"
+        install_complete_text = f"Install of {package_title} complete"
         event = events.Event(
             name=events.EventType.INSTALL_PROGRESS_TEXT,
-            data={"text": install_complete_text, "progress": 100},
+            data={"title": install_complete_text},
         )
         events.post_event_sync(event, event_queue=events.gui_event_queue)
+        return True
     else:
         logger.error("Install failed")
-        logger.error("Retcode is: %s", retcode)
+        logger.error("Retcode is: %s", return_code)
         logger.error("Error is: %s", error)
+        if error is None and return_code is None:
+            # Terminal must have force quit - won't have an error message
+            install_complete_text = f"Install of {package_title} failed"
+            event = events.Event(
+                name=events.EventType.INSTALL_PROGRESS_TEXT,
+                data={"title": install_complete_text},
+            )
+            events.post_event_sync(event, event_queue=events.gui_event_queue)
+        return False
 
 
-def process_line(line) -> ProgressResult | ErrorResult | ReturnCodeResult:
+def process_result(result: ProgressResult | ErrorResult | ReturnCodeResult, current_error: str, package_title, packages_to_install, package_number) -> tuple[bool, int | None]:
+    """Process a Result and return data to the GUI.
+    
+    ::returns:: Should Continue. Break on False return.
+    """
+    if isinstance(result, ProgressResult):
+        event = events.Event(
+            name=events.EventType.INSTALL_PROGRESS_TEXT,
+            data={
+                "title": f"Installing {package_title}",
+                "progress": progress_mincer(
+                    result.progress, packages_to_install, package_number
+                ),
+            },
+        )
+        events.post_event_sync(event, event_queue=events.gui_event_queue)
+        return (True, None)
+    elif isinstance(result, ErrorResult):
+        # Only need to push the first error, otherwise it will keep finding errors
+        # in the output and switch quickly
+        if not current_error:
+            event = events.Event(
+                name=events.EventType.INSTALL_PROGRESS_TEXT,
+                data={
+                    "title": f"Failed to install {package_title}",
+                    "subtitle": result.error.args[0],
+                    "progress": 100,
+                },
+            )
+            events.post_event_sync(event, event_queue=events.gui_event_queue)
+        return (True, None)
+    elif isinstance(result, ReturnCodeResult):
+        retcode = result.return_code
+        if retcode > 1 and current_error is None:
+            event = events.Event(
+                name=events.EventType.INSTALL_PROGRESS_TEXT,
+                data={"title": f"Failed to install {package_title}", "progress": 100},
+            )
+            events.post_event_sync(event, event_queue=events.gui_event_queue)
+        return (False, retcode)
+    # Not a matching line - continue
+    return (True, None)
+
+
+def process_line(line) -> ProgressResult | ErrorResult | ReturnCodeResult | None:
     progress = count_progress(line=line, max_count=68)
     if progress:
         return ProgressResult(progress=progress)
@@ -270,3 +340,14 @@ def parse_retcode(line: str) -> int:
     except ValueError:
         return None
     return int_retcode
+
+
+def progress_mincer(
+    package_progress: int, packages_to_install: int, package_number: int
+) -> int:
+    """Get progress as part of the total packages to install."""
+    total_for_stage = 1 / packages_to_install * 100
+    zero_point = 100 * ((package_number - 1) / packages_to_install)
+    stage_progress = total_for_stage * (package_progress / 100)
+    overall_progress = zero_point + stage_progress
+    return ceil(overall_progress)
