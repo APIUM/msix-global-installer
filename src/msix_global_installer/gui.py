@@ -102,11 +102,7 @@ class InfoScreen(ttk.Frame, events.EventHandler):
     def __init__(self, parent: tkinter.Tk, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent: tkinter.Tk = parent
-        post_backend_event(
-            events.Event(
-                events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()
-            )
-        )
+        post_backend_event(events.Event(events.EventType.REQUEST_MSIX_METADATA, data=events.EventData()))
 
         self.title = ttk.Label(self, text="Install MSIX Application")
         self.title.grid(row=0, column=0, sticky="W")

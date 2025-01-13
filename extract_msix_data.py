@@ -38,4 +38,6 @@ scaled_image_path = pathlib.Path(metadata.icon_path.parent) / pathlib.Path(
 image.save_image(scaled_image, scaled_image_path)
 metadata.scaled_icon_path = scaled_image_path
 
+print(f"\nExtracted: {all_metadata}")
+
 pickler.save_metadata(data_file_path=data_file, metadata_list=all_metadata)

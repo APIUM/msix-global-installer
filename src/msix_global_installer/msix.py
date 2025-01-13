@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from math import ceil
-from msix_global_installer import events
+from msix_global_installer import events, config
+import io
 import logging
 import os
 import pathlib
 import re
+import sys
 import xml.etree.ElementTree as ET
 import zipfile
-import sys
 
 if sys.platform == "win32":
     from winpty import PtyProcess
@@ -41,9 +42,7 @@ class ReturnCodeResult:
     return_code: int
 
 
-def get_msix_metadata(
-    msix_path: str, output_icon_path: pathlib.Path | None = None
-) -> MsixMetadata:
+def get_msix_metadata(msix_path: str, output_icon_path: pathlib.Path | None = None) -> MsixMetadata:
     """
     Extract Metadata from MSIX package.
 
@@ -55,67 +54,108 @@ def get_msix_metadata(
         raise Exception("Path doesn't exist")
 
     try:
+        is_bundle = msix_path.endswith(".msixbundle") or msix_path.endswith(".appxbundle")
         with zipfile.ZipFile(msix_path, "r") as msix:
-            with msix.open("AppxManifest.xml") as manifest:
-                tree = ET.parse(manifest)
-                root = tree.getroot()
-
-                # Define namespace for querying XML
-                namespace = {
-                    "default": "http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-                }
-
-                # Extract DisplayName
-                display_name = root.find(
-                    "default:Properties/default:DisplayName", namespace
-                )
-                package_name = (
-                    display_name.text
-                    if display_name is not None
-                    else "DisplayName not found"
-                )
-
-                # Extract Version (Attribute of the Identity element)
-                identity = root.find("default:Identity", namespace)
-                version = (
-                    identity.attrib.get("Version", "Version not found")
-                    if identity is not None
-                    else "Version not found"
-                )
-
-                # Extract Publisher (Attribute of the Identity element)
-                publisher_full = (
-                    identity.attrib.get("Publisher", "Publisher not found")
-                    if identity is not None
-                    else "Publisher not found"
-                )
-                publisher = get_name_from_publisher(publisher_full)
-
-                # Extract Icon Path
-                icon_element = root.find("default:Properties/default:Logo", namespace)
-                icon_path_in_msix = (
-                    icon_element.text if icon_element is not None else None
-                )
-
-                extracted_icon_path = None
-                if output_icon_path is not None:
-                    if icon_path_in_msix:
-                        # Extract the icon from the MSIX package
-                        icon_path_in_msix = icon_path_in_msix.replace("\\", "/")
-                        output_icon_path = (
-                            pathlib.Path(output_icon_path)
-                            / pathlib.Path(icon_path_in_msix).name
-                        )
-                        with msix.open(icon_path_in_msix) as icon_file:
-                            with open(output_icon_path, "wb") as out_file:
-                                out_file.write(icon_file.read())
-                        extracted_icon_path = pathlib.Path(output_icon_path)
-
-                return MsixMetadata(
-                    msix_path, package_name, version, publisher, extracted_icon_path
-                )
+            if is_bundle:
+                for file in msix.namelist():
+                    # Get the first msix file in the bundle and use that as the reference
+                    # TODO: Support localisation
+                    if file.endswith(".msix") or file.endswith(".appx"):
+                        with msix.open(file) as inner_msix:
+                            # This opens a ZipFileObject so we need to open it as bytes like object in memory
+                            # If the MSIX file is huge this will cause trouble opening on very low memory computers I expect
+                            inner_msix_filedata = io.BytesIO(inner_msix.read())
+                            with zipfile.ZipFile(inner_msix_filedata, "r") as working_msix:
+                                return extract_metadata_from_manifest(
+                                    working_msix, pathlib.Path(msix_path), output_icon_path
+                                )
+                raise FileNotFoundError("No APPX or MSIX in bundle!")
+            else:
+                return extract_metadata_from_manifest(msix, pathlib.Path(msix_path), output_icon_path)
     except Exception as e:
-        return MsixMetadata("Error", "Error", str(e), "Error")
+        raise e
+
+
+def extract_metadata_from_manifest(
+    open_msix_path_object, msix_path: pathlib.Path, output_icon_path: pathlib.Path | None
+):
+    """Extract details from a given manifest."""
+    with open_msix_path_object.open("AppxManifest.xml") as manifest:
+        tree = ET.parse(manifest)
+        root = tree.getroot()
+
+        # Define namespace for querying XML
+        namespace = {"default": "http://schemas.microsoft.com/appx/manifest/foundation/windows10"}
+
+        # Extract DisplayName
+        display_name = root.find("default:Properties/default:DisplayName", namespace)
+        package_name = str(display_name.text) if display_name is not None else "DisplayName not found"
+
+        # Extract Version (Attribute of the Identity element)
+        identity = root.find("default:Identity", namespace)
+        version = identity.attrib.get("Version", "Version not found") if identity is not None else "Version not found"
+
+        # Extract Publisher (Attribute of the Identity element)
+        publisher_full = (
+            identity.attrib.get("Publisher", "Publisher not found") if identity is not None else "Publisher not found"
+        )
+        publisher = get_name_from_publisher(publisher_full)
+
+        # Extract Icon Path
+        icon_element = root.find("default:Properties/default:Logo", namespace)
+        icon_path_in_msix = icon_element.text if icon_element is not None else None
+
+        extracted_icon_path = None
+        if output_icon_path is not None:
+            if icon_path_in_msix:
+                # Get the correct name
+                icon_path_in_msix = icon_path_in_msix.replace("\\", "/")
+                # Extract the icon from the MSIX package
+                try:
+                    qualified_icon_path = find_qualified_logo_file(open_msix_path_object, icon_path_in_msix)
+                except FileNotFoundError:
+                    print("No logo found...")
+                    extracted_icon_path = None
+                else:
+                    # Build the name to extract to
+                    output_icon_path = pathlib.Path(output_icon_path) / pathlib.Path(icon_path_in_msix).name
+                    # Extract
+                    with open_msix_path_object.open(qualified_icon_path) as icon_file:
+                        with open(output_icon_path, "wb") as out_file:
+                            out_file.write(icon_file.read())
+                    extracted_icon_path = pathlib.Path(output_icon_path)
+
+        return MsixMetadata(str(msix_path), package_name, version, publisher, extracted_icon_path)
+
+
+def find_qualified_logo_file(manifest: zipfile.ZipFile, resource_path: str) -> str:
+    """
+    Searches for the best match for a resource file with qualifiers in the ZIP archive.
+
+    Eg would be assets/AppPackageLogo.png would find assets/AppPackageLogo.scale200.png
+    """
+    # Strip .png extension if it exists
+    base_name = resource_path.rsplit(".png", 1)[0]
+
+    # Generate potential qualified file names
+    candidates = [
+        f"{resource_path}",  # Ensure we check if it's available with the given name first
+        # Then try different sizes
+        f"{base_name}.scale-100.png",
+        f"{base_name}.scale-200.png",
+        f"{base_name}.scale-400.png",
+    ]
+
+    # List all files in the archive
+    all_files = manifest.namelist()
+
+    # Check for matches
+    for candidate in candidates:
+        if candidate in all_files:
+            return candidate
+
+    # If no matches found, raise an error
+    raise FileNotFoundError(f"No qualified file found for {resource_path} in archive.")
 
 
 def get_name_from_publisher(publisher: str) -> str:
@@ -161,14 +201,9 @@ def install_msix(
 ):
     """Install an MSIX package."""
     # TODO: If global install ensure we are running as admin
-    global_install_command = (
-        "Add-AppxProvisionedPackage -PackagePath %s -Online -SkipLicense | Out-String"
-        % path
-    )
+    global_install_command = "Add-AppxProvisionedPackage -PackagePath %s -Online -SkipLicense | Out-String" % path
     local_install_command = "Add-AppxPackage -Path %s | Out-String" % path
-    command_string = (
-        local_install_command if not global_install else global_install_command
-    )
+    command_string = local_install_command if not global_install else global_install_command
     save_returncode_string = "; $installRetcode = $LastExitCode"
     print_return_code = "; echo RETCODE=$installRetcode"
     wait_string = "; Start-Sleep -Milliseconds 1500"
@@ -181,12 +216,7 @@ def install_msix(
     # Here we incorperate a wait which allows us to capture the lines before the terminal closes
     # As we need the last lines which are the return code
     proc.write(
-        command_string
-        + save_returncode_string
-        + print_return_code * 10
-        + wait_string
-        + exit_string
-        + os.linesep
+        command_string + save_returncode_string + print_return_code * 10 + wait_string + exit_string + os.linesep
     )
 
     error: str | None = None
@@ -194,10 +224,17 @@ def install_msix(
     while proc.isalive():
         line = proc.readline()
         logger.debug("%r\n\r", line)
-        result = process_line(line)
+        is_dependency = packages_to_install > 1 and package_number != packages_to_install
+        result = process_line(line, is_dependency)
         # Return code will also come with a False for should continue so it doesn't
         # matter that we are overwriting this
-        should_continue, retcode = process_result(result=result, package_title=title, current_error=error, packages_to_install=packages_to_install, package_number=package_number)
+        should_continue, retcode = process_result(
+            result=result,
+            package_title=title,
+            current_error=error,
+            packages_to_install=packages_to_install,
+            package_number=package_number,
+        )
         if isinstance(result, ErrorResult):
             error = result.error if not error else error
         if not should_continue:
@@ -220,7 +257,7 @@ def install_msix(
 def check_has_succeeded(return_code: int, error: str, package_title: str):
     """
     Return success.
-    
+
     Post update to GUI on result.
     """
     if return_code == 0 and not error:
@@ -247,9 +284,15 @@ def check_has_succeeded(return_code: int, error: str, package_title: str):
         return False
 
 
-def process_result(result: ProgressResult | ErrorResult | ReturnCodeResult, current_error: str, package_title, packages_to_install, package_number) -> tuple[bool, int | None]:
+def process_result(
+    result: ProgressResult | ErrorResult | ReturnCodeResult,
+    current_error: str,
+    package_title,
+    packages_to_install,
+    package_number,
+) -> tuple[bool, int | None]:
     """Process a Result and return data to the GUI.
-    
+
     ::returns:: Should Continue. Break on False return.
     """
     if isinstance(result, ProgressResult):
@@ -257,9 +300,7 @@ def process_result(result: ProgressResult | ErrorResult | ReturnCodeResult, curr
             name=events.EventType.INSTALL_PROGRESS_TEXT,
             data={
                 "title": f"Installing {package_title}",
-                "progress": progress_mincer(
-                    result.progress, packages_to_install, package_number
-                ),
+                "progress": progress_mincer(result.progress, packages_to_install, package_number),
             },
         )
         events.post_event_sync(event, event_queue=events.gui_event_queue)
@@ -291,13 +332,23 @@ def process_result(result: ProgressResult | ErrorResult | ReturnCodeResult, curr
     return (True, None)
 
 
-def process_line(line) -> ProgressResult | ErrorResult | ReturnCodeResult | None:
+def process_line(line, is_dependency: bool) -> ProgressResult | ErrorResult | ReturnCodeResult | None:
     progress = count_progress(line=line, max_count=68)
     if progress:
         return ProgressResult(progress=progress)
-    elif "error" in line or "CategoryInfo" in line:
+    elif "error" in line or "CategoryInfo" in line or "HRESULT" in line:
         try:
             parse_error(line)
+        # Must parse this first as it's derived from RuntimeError
+        except RecovorableRuntimeError as e:
+            logger.info("Got a recoverable error: %s", e)
+            if is_dependency and config.ALLOW_DEPENDENCIES_TO_FAIL_DUE_TO_NEWER_VERSION_INSTALLED:
+                # Fudge progress to say it's installed successfully if
+                # we are happy to ignore the error as it's a dependency
+                # and the error says that it's already installed.
+                return ReturnCodeResult(0)
+            else:
+                return ErrorResult(e)
         except RuntimeError as e:
             return ErrorResult(e)
     elif "RETCODE=" in line:
@@ -307,18 +358,20 @@ def process_line(line) -> ProgressResult | ErrorResult | ReturnCodeResult | None
             return ReturnCodeResult(return_code)
 
 
+class RecovorableRuntimeError(RuntimeError):
+    """Used when an error is raised but it needs to be parsed differently."""
+    pass
+
+
 def parse_error(error_string: str):
     logger.warning("Error string: %s" % error_string)
     if "0x80074CF0" in error_string:
         raise RuntimeError("Certificate error")
     elif "0x800B0109" in error_string:
-        raise RuntimeError(
-            "The root certificate of the signature in the app package or bundle must be trusted."
-        )
-    elif (
-        "Add-AppxProvisionedPackage : The requested operation requires elevation"
-        in error_string
-    ):
+        raise RuntimeError("The root certificate of the signature in the app package or bundle must be trusted.")
+    elif "0x80073D06" in error_string:
+        raise RecovorableRuntimeError("A newer version of this package is already installed!")
+    elif "Add-AppxProvisionedPackage : The requested operation requires elevation" in error_string:
         raise RuntimeError("The requested operation requires elevation")
     elif "ObjectNotFound" in error_string:
         raise RuntimeError("Installer file not found!")
@@ -342,9 +395,7 @@ def parse_retcode(line: str) -> int:
     return int_retcode
 
 
-def progress_mincer(
-    package_progress: int, packages_to_install: int, package_number: int
-) -> int:
+def progress_mincer(package_progress: int, packages_to_install: int, package_number: int) -> int:
     """Get progress as part of the total packages to install."""
     total_for_stage = 1 / packages_to_install * 100
     zero_point = 100 * ((package_number - 1) / packages_to_install)
