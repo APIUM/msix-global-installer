@@ -76,9 +76,7 @@ async def wait_for_queue(timeout_s: int, event_queue: asyncio.Queue) -> None:
         current_time = time.monotonic_ns()
         await asyncio.sleep(0)
         if current_time - initial_time > timeout_ns:
-            raise TimeoutError(
-                f"Timed out waiting for event queue to clear. Events: {str(event_queue)}"
-            )
+            raise TimeoutError(f"Timed out waiting for event queue to clear. Events: {str(event_queue)}")
         elif event_queue.empty():
             break
 

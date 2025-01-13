@@ -8,7 +8,7 @@ class TestMsix:
 
     def test_get_msix_metadata(self, tmpdir):
         """Test we get the required metadata from a given test file."""
-        path = pathlib.Path("tests/TestMsixPackage.msix")
+        path = str(pathlib.Path("tests/TestMsixPackage.msix"))
         dir = tmpdir
         data = msix.get_msix_metadata(path, output_icon_path=dir)
         assert data.package_name == "MyEmployees"
