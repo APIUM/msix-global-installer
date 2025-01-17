@@ -43,3 +43,9 @@ The packages will be installed in reverse order with the last one specified inst
 main package (first argument) is installed last.
 
 There is no tested limit on the number of dependencies.
+
+## Logs
+
+Logs are enabled by default.
+You can disable logging by changing ENABLE_LOG to 'False' in config.py.
+Logs are stored in 'C:\\Users\\USER\\AppData\\Local\\msix_global_installer\\msix_global_installer\\Logs'.

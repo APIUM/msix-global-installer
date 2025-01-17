@@ -2,9 +2,29 @@ from msix_global_installer import config, events, gui, msix, pickler, pyinstalle
 import asyncio
 import logging
 import threading
+import platformdirs
+import pathlib
 
 
-logging.basicConfig(level=logging.NOTSET)
+if config.ENABLE_LOGS:
+    log_dir_path = pathlib.Path(
+        platformdirs.user_log_dir(appname="msix_global_installer", appauthor="msix_global_installer")
+    )
+    log_dir_path.mkdir(parents=True)
+    log_path = log_dir_path / "installer.log"
+    logging.basicConfig(
+        level=logging.NOTSET,
+        filename=log_path,
+        filemode="a",
+        format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+else:
+    logging.basicConfig(
+        level=logging.NOTSET,
+        format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
 logger = logging.getLogger(__name__)
 
 
