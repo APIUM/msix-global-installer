@@ -39,7 +39,7 @@ class ErrorResult:
 
 @dataclass
 class ReturnCodeResult:
-    return_code: int
+    install_success: bool
 
 
 def get_msix_metadata(msix_path: str, output_icon_path: pathlib.Path | None = None) -> MsixMetadata:
@@ -201,13 +201,16 @@ def install_msix(
 ):
     """Install an MSIX package."""
     # TODO: If global install ensure we are running as admin
-    global_install_command = "Add-AppxProvisionedPackage -PackagePath %s -Online -SkipLicense | Out-String" % path
-    local_install_command = "Add-AppxPackage -Path %s | Out-String" % path
+    global_install_command = (
+        "Add-AppxProvisionedPackage -PackagePath %s -Online -SkipLicense -ErrorAction Continue | Out-String" % path
+    )
+    local_install_command = "Add-AppxPackage -Path %s -ErrorAction Continue | Out-String" % path
     command_string = local_install_command if not global_install else global_install_command
-    save_returncode_string = "; $installRetcode = $LastExitCode"
-    print_return_code = "; echo RETCODE=$installRetcode"
+    # Use a q after the success int to confirm that we have read the right thing
+    save_returncode_string = "; $success_tail='q' ; $success=[int][bool]::Parse($?)"
+    print_return_code = "; echo INSTALL_SUCCESS===$success$success_tail"
     wait_string = "; Start-Sleep -Milliseconds 1500"
-    exit_string = "; Exit"
+    exit_string = "; echo Exiting with code $LASTEXITCODE; Exit"
 
     # We must use a psudo terminal as otherwise
     # the written lines are not going to stdout, just appearing on the terminal for the progress
@@ -220,7 +223,7 @@ def install_msix(
     )
 
     error: str | None = None
-    retcode: int | None = None
+    install_succeeded: bool | None = None
     while proc.isalive():
         line = proc.readline()
         logger.debug("%r\n\r", line)
@@ -228,18 +231,27 @@ def install_msix(
         result = process_line(line, is_dependency)
         # Return code will also come with a False for should continue so it doesn't
         # matter that we are overwriting this
-        should_continue, retcode = process_result(
+        should_continue, returned_install_result = process_result(
             result=result,
             package_title=title,
             current_error=error,
             packages_to_install=packages_to_install,
             package_number=package_number,
         )
+        install_succeeded = returned_install_result
         if isinstance(result, ErrorResult):
             error = result.error if not error else error
         if not should_continue:
+            logger.info("Received request to not continue!")
+            # proc.write(exit_string + os.linesep)
             break
+        logger.info("Continuing")
 
+    # TODO Work out if this actually returns the exit status of the terminal
+    # It appears to always return 0
+    logger.info("EXIT STATUS : %s", proc.exitstatus)
+    if not install_succeeded:
+        install_succeeded = True if proc.exitstatus == 0 else None
     logger.debug("Process is closed")
 
     # Set progress to 100
@@ -251,16 +263,16 @@ def install_msix(
     )
     events.post_event_sync(event, event_queue=events.gui_event_queue)
 
-    return check_has_succeeded(return_code=retcode, error=error, package_title=title)
+    return check_has_succeeded(install_succeeded=install_succeeded, error=error, package_title=title)
 
 
-def check_has_succeeded(return_code: int, error: str, package_title: str):
+def check_has_succeeded(install_succeeded: bool | None, error: str, package_title: str):
     """
     Return success.
 
     Post update to GUI on result.
     """
-    if return_code == 0 and not error:
+    if install_succeeded is not None and install_succeeded and not error:
         logger.info("Should have installed successfully!")
         install_complete_text = f"Install of {package_title} complete"
         event = events.Event(
@@ -271,10 +283,11 @@ def check_has_succeeded(return_code: int, error: str, package_title: str):
         return True
     else:
         logger.error("Install failed")
-        logger.error("Retcode is: %s", return_code)
+        logger.error("App reported install succeeded: %s", install_succeeded)
         logger.error("Error is: %s", error)
-        if error is None and return_code is None:
+        if error is None and install_succeeded is None:
             # Terminal must have force quit - won't have an error message
+            logger.warning("Stopping install - terminal must have force quit.")
             install_complete_text = f"Install of {package_title} failed"
             event = events.Event(
                 name=events.EventType.INSTALL_PROGRESS_TEXT,
@@ -285,15 +298,17 @@ def check_has_succeeded(return_code: int, error: str, package_title: str):
 
 
 def process_result(
-    result: ProgressResult | ErrorResult | ReturnCodeResult,
-    current_error: str,
+    result: ProgressResult | ErrorResult | ReturnCodeResult | None,
+    current_error: str | None,
     package_title,
     packages_to_install,
     package_number,
-) -> tuple[bool, int | None]:
+) -> tuple[bool, bool | None]:
     """Process a Result and return data to the GUI.
 
-    ::returns:: Should Continue. Break on False return.
+    ::returns:: (should_continue, install_success)
+    Should Continue: Break on False return.
+    Install Success: Reported success of the script
     """
     if isinstance(result, ProgressResult):
         event = events.Event(
@@ -318,16 +333,25 @@ def process_result(
                 },
             )
             events.post_event_sync(event, event_queue=events.gui_event_queue)
+            logger.warning("Stoppping install due to new error: %s", result.error)
+            return (False, None)
         return (True, None)
     elif isinstance(result, ReturnCodeResult):
-        retcode = result.return_code
-        if retcode > 1 and current_error is None:
+        install_succeeded = result.install_success
+        if install_succeeded is not None and not install_succeeded and current_error is None:
             event = events.Event(
                 name=events.EventType.INSTALL_PROGRESS_TEXT,
                 data={"title": f"Failed to install {package_title}", "progress": 100},
             )
             events.post_event_sync(event, event_queue=events.gui_event_queue)
-        return (False, retcode)
+            logger.warning(
+                "Stopping install - script reported success-(%s) and current error (%s)",
+                install_succeeded,
+                current_error,
+            )
+            return (False, install_succeeded)
+        # Success return code recieved
+        return (False, install_succeeded)
     # Not a matching line - continue
     return (True, None)
 
@@ -343,23 +367,26 @@ def process_line(line, is_dependency: bool) -> ProgressResult | ErrorResult | Re
         except RecovorableRuntimeError as e:
             logger.info("Got a recoverable error: %s", e)
             if is_dependency and config.ALLOW_DEPENDENCIES_TO_FAIL_DUE_TO_NEWER_VERSION_INSTALLED:
+                logger.info("Settings allow for success to be returned")
                 # Fudge progress to say it's installed successfully if
                 # we are happy to ignore the error as it's a dependency
                 # and the error says that it's already installed.
-                return ReturnCodeResult(0)
+                return ReturnCodeResult(True)
             else:
+                logger.warning("Settings insist this is a true failure")
                 return ErrorResult(e)
         except RuntimeError as e:
             return ErrorResult(e)
-    elif "RETCODE=" in line:
-        return_code = parse_retcode(line)
-        logger.info("Retcode found: %s", return_code)
-        if return_code is not None:
-            return ReturnCodeResult(return_code)
+    elif "INSTALL_SUCCESS===" in line:
+        install_succeeded = parse_retcode(line)
+        if install_succeeded is not None:
+            logger.info("Success state %s found from line", install_succeeded)
+            return ReturnCodeResult(install_succeeded)
 
 
 class RecovorableRuntimeError(RuntimeError):
     """Used when an error is raised but it needs to be parsed differently."""
+
     pass
 
 
@@ -371,6 +398,8 @@ def parse_error(error_string: str):
         raise RuntimeError("The root certificate of the signature in the app package or bundle must be trusted.")
     elif "0x80073D06" in error_string:
         raise RecovorableRuntimeError("A newer version of this package is already installed!")
+    elif "0x80073D02" in error_string:
+        raise RecovorableRuntimeError("A conflicting application is open!")
     elif "Add-AppxProvisionedPackage : The requested operation requires elevation" in error_string:
         raise RuntimeError("The requested operation requires elevation")
     elif "ObjectNotFound" in error_string:
@@ -378,21 +407,27 @@ def parse_error(error_string: str):
     raise RuntimeError("Unknown error!")
 
 
-def parse_retcode(line: str) -> int:
+def parse_retcode(line: str) -> bool | None:
     """Get the retcode out of a string.
 
     Expects RETCODE=x where x is the retcode and any
     amount of values either side.
     """
-    split = line.split("RETCODE=")
-    returncode = split[1][0]
+    split = line.split("INSTALL_SUCCESS===")
+    install_result = split[1][0]
+    install_result_confirmation_tail = split[1][1]
     try:
+        logger.info("Parsing return value %s from %s", install_result, split)
         # Line can sometimes be the command which gives an incorrect value
         # Such as ...ho\x1b[m RETCODE=\x1b[9...
-        int_retcode = int(returncode)
+        bool_success = bool(int(install_result))
+        if install_result_confirmation_tail == "q":
+            logger.debug("Line rejected, don't have expected tail.")
+            return None
     except ValueError:
+        logger.debug("Value is not a bool")
         return None
-    return int_retcode
+    return bool(bool_success)
 
 
 def progress_mincer(package_progress: int, packages_to_install: int, package_number: int) -> int:
