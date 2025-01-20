@@ -10,7 +10,8 @@ if config.ENABLE_LOGS:
     log_dir_path = pathlib.Path(
         platformdirs.user_log_dir(appname="msix_global_installer", appauthor="msix_global_installer")
     )
-    log_dir_path.mkdir(parents=True)
+    if not log_dir_path.exists():
+        log_dir_path.mkdir(parents=True)
     log_path = log_dir_path / "installer.log"
     logging.basicConfig(
         level=logging.NOTSET,
